@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>4× RTX 3070 + Xeon E5-2690 v4 — hybrydowa inferencja MoE</title>
-<meta name="description" content="Realna wydajność klastra 4× RTX 3070 (32 GB VRAM) + 128 GB DDR4-2400 + Xeon E5-2690 v4 w hybrydowej inferencji dużych modeli MoE: tokeny/s, optymalizacje -ot, ik_llama.cpp, Strata, audyt plata X99 i riserów.">
+<title>4× RTX 3070 + Xeon E5-2698 v4 — hybrydowa inferencja MoE</title>
+<meta name="description" content="Realna wydajność klastra 4× RTX 3070 (32 GB VRAM) + 128 GB DDR4-2400 + Xeon E5-2698 v4 w hybrydowej inferencji dużych modeli MoE: tokeny/s, optymalizacje -ot, ik_llama.cpp, Strata, audyt plata X99 i riserów.">
 <meta name="color-scheme" content="dark">
 <style>
   :root{
@@ -237,6 +237,12 @@
     nav.toc{display:none}
     .layout{grid-template-columns:1fr}
   }
+  a.buy{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;
+    background:linear-gradient(135deg,var(--cy2),var(--vi));color:#04121f;font-weight:700;
+    font-size:12px;text-decoration:none;white-space:nowrap;letter-spacing:.01em}
+  a.buy:hover{filter:brightness(1.15);color:#04121f}
+  a.buy.alt{background:var(--panel);color:var(--fg);border:1px solid var(--line,#22304a)}
+  td .buy{margin-top:4px}
 </style>
 </head>
 <body>
@@ -244,21 +250,23 @@
 <header class="hero">
   <div class="wrap">
     <span class="eyebrow"><span class="dot"></span>Raport techniczny · hybrydowa inferencja MoE</span>
-    <h1>4× RTX 3070 + Xeon E5-2690 v4:<br>ile realnie wyciśniesz tokenów na sekundę</h1>
+    <h1>4× RTX 3070 + Xeon E5-2698 v4:<br>ile realnie wyciśniesz tokenów na sekundę</h1>
     <p class="lede">
       Konfiguracja oparta na <strong>czterech kartach RTX 3070 (32 GB VRAM)</strong> oraz
-      <strong>128 GB czterokanałowej DDR4-2400</strong> na Xeonie E5-2690 v4 w hybrydowej inferencji
-      dużych modeli MoE jest fundamentalnie ograniczona realną przepustowością pamięci RAM
-      (<strong>~52–58 GB/s</strong>) oraz brakiem AVX-512/VNNI. Przy odpowiednim podziale warstw —
-      uwaga i KV-Cache w VRAM, rzadcy eksperci MoE w RAM — zestaw wygeneruje od
-      <strong>6 do 125 tokenów/s</strong>, zależnie od architektury, liczby aktywnych parametrów
-      i stopnia stratnej kwantyzacji.
+      <strong>128 GB czterokanałowej DDR4-2400 ECC RDIMM</strong> na Xeonie <strong>E5-2698 v4
+      (20C/40T)</strong> w hybrydowej inferencji dużych modeli MoE. W klasycznym offladzie
+      (<code>ik_llama.cpp</code>) zestaw dusi się na <strong>~52–58 GB/s</strong> realnego odczytu z RAM
+      i daje 16–24 t/s. Po przejściu na silnik <strong>Strata 0.2.10</strong> (Layer Split,
+      <code>--resident-experts</code>, drafter DFlash2) 61% ekspertów siedzi w VRAM kart, ruch do RAM
+      spada do <strong>~0,54 GB na token</strong>, a wąskim gardłem zostaje moc AVX2 — stąd
+      <strong>35–45 tokenów/s</strong> na modelu 177B. Poniżej pełny model fizyczny, weryfikacja
+      rynkowa i lista zakupowa z żywymi cenami (3 listopada 2026).
     </p>
 
     <div class="specs">
       <div class="spec"><span class="k">VRAM</span><b>32 GB</b> · 4× 8 GB GDDR6</div>
       <div class="spec"><span class="k">RAM</span><b>128 GB</b> DDR4-2400 QC</div>
-      <div class="spec"><span class="k">CPU</span><b>E5-2690 v4</b> · 14C/28T</div>
+      <div class="spec"><span class="k">CPU</span><b>E5-2698 v4</b> · 20C/40T</div>
       <div class="spec"><span class="k">AVX-512</span><b style="color:var(--rd)">brak</b></div>
     </div>
 
@@ -267,7 +275,7 @@
       <div class="metric v"><div class="val">448 GB/s</div><div class="lbl">przepustowość 1× RTX 3070</div></div>
       <div class="metric g"><div class="val">52–58 GB/s</div><div class="lbl">realny odczyt z RAM (AVX2)</div></div>
       <div class="metric w"><div class="val">~27–28 GB</div><div class="lbl">VRAM na wagi (po buforach)</div></div>
-      <div class="metric r"><div class="val">3,5 / 10</div><div class="lbl">ocena inżynieryjna zestawu</div></div>
+      <div class="metric g"><div class="val">7,6 / 10</div><div class="lbl">ocena inżynieryjna zestawu</div></div>
     </div>
   </div>
 </header>
@@ -281,6 +289,7 @@
       <li><a href="#s2"><span class="num">02</span>Szybsza generacja tekstu</a></li>
       <li><a href="#s3"><span class="num">03</span>Nowe architektury 2025/26</a></li>
       <li><a href="#s4"><span class="num">04</span>Audyt rynkowy i techniczny</a></li>
+      <li><a href="#s5"><span class="num">05</span>Lista zakupowa (żywe ceny)</a></li>
     </ol>
   </nav>
 
@@ -299,7 +308,7 @@
         na wagi zostaje około <strong>27–28 GB</strong>.</li>
         <li><strong>Pula RAM (128 GB DDR4-2400 Quad-Channel):</strong> teoretyczna przepustowość to
         <code>2400 MT/s × 8 B × 4 = 76,8 GB/s</code>. W praktyce kontroler pamięci Broadwell-EP
-        (Xeon E5-2690 v4) przy wielowątkowym odczycie AVX2 w llama.cpp osiąga <strong>52–56 GB/s</strong>.</li>
+        (Xeon E5-2698 v4) przy wielowątkowym odczycie AVX2 w llama.cpp osiąga <strong>50–56 GB/s</strong>.</li>
       </ul>
 
       <p>Poniższa tabela przedstawia realne osiągi tego zestawu przy optymalnym rozkładzie tensorów
@@ -385,7 +394,7 @@
       <p>W modelach ograniczonych przepustowością pamięci (memory-bound) przejście z Q4_K_M
       (ok. 4,8 bitu na wagę) na stratne formaty wektorowe IQ3_XXS (ok. 3,1 bitu) lub IQ2_XS (ok. 2,4 bitu)
       zmniejsza objętość aktywnych macierzy czytanych z wolnego RAM-u DDR4 o <strong>35–50%</strong>.
-      Ponieważ Xeon E5-2690 v4 ma dość mocy obliczeniowej na 14 rdzeniach, by w locie rozpakować tablice
+      Ponieważ Xeon E5-2698 v4 ma dość mocy obliczeniowej na 18 rdzeniach roboczych, by w locie rozpakować tablice
       kodowe (lookup tables w kwantyzacji I-quant), zmniejszenie rozmiaru wag o 40% przekłada się niemal
       liniowo na <strong>+30–40%</strong> tokenów na sekundę.</p>
 
@@ -520,13 +529,16 @@
 
         <li><strong>Gdzie jest błąd w wycenie zestawu (pułapka lokalnych handlarzy):</strong>
           <ul>
-            <li><strong>Serwerowe DDR4 ECC RDIMM ≠ konsumenckie UDIMM.</strong> Xeon E5-2690 v4 pracuje
+            <li><strong>Serwerowe DDR4 ECC RDIMM ≠ konsumenckie UDIMM.</strong> Xeon E5-2698 v4 pracuje
             z kośćmi ECC Registered (RDIMM) lub LRDIMM 2133/2400 MHz. Te moduły nie działają w zwykłych
             desktopach (Core / Ryzen), więc popyt konsumencki ich nie dotyczy. Lokalni sprzedawcy w Polsce
             sztucznie windują ceny starych RDIMM 2133/2400 do poziomu pamięci konsumenckich, wykorzystując
-            narrację o kryzysie. Na płycie 4-kanałowej z 8 slotami zamiast przepłacać za 4× 32 GB,
-            taniej i wydajniej jest obsadzić <strong>8× 16 GB DDR4-2400 ECC RDIMM</strong>
-            (rank interleaving w układzie 2DPC).</li>
+            narrację o kryzysie. <strong>Weryfikacja cen z 3.11.2026 odwraca jednak wniosek z v1:</strong>
+            na Allegro pojedyncza kość 16 GB PC4-2400T ECC RDIMM kosztuje 349 zł (8× = <strong>2 792 zł</strong>),
+            a kość 32 GB 2Rx4 — 550–649 zł (4× = 2 200–2 596 zł). Jedyny sensowny zakup to
+            <strong>komplet 4× 32 GB SK Hynix HMA84GR7MFR4N-UH 2Rx4 PC4-2400T-RB1-11 z OLX za 1 750 zł</strong>
+            (437,50 zł/kość, Wyszków). Obsadzamy 4 czarne sloty, 8× 16 GB jest dziś droższe, nie tańsze.
+            Uwaga: to <em>lot mieszany</em> — 3 kości Cisco-OEM (Korea, rev AC) + 1 China (rev AA).</li>
             <li><strong>Paradoks używanego SATA SSD w dobie drogiego NAND:</strong> skoro najdroższym
             elementem SSD jest sam krzem NAND, różnica na rynku wtórnym między SATA a NVMe M.2 PCIe 3.0
             o tej samej pojemności jest marginalna. SATA (~500 MB/s) do serwera ładującego modele
@@ -540,65 +552,251 @@
       <h3>B. Audyt inżynieryjny podzespołów i architektury</h3>
 
       <div class="verdict">
-        <div class="score"><div class="big">3,5</div><div class="sub">/ 10 ocena</div></div>
+        <div class="score"><div class="big">7,6</div><div class="sub">/ 10 ocena</div></div>
         <div class="txt">
-          <strong>Zestaw działa, ale przepłaca za architekturę, która nie daje przewagi</strong> —
-          dwa mostki PLX nie zwiększają przepustowości do RAM, a niezasilane risery to ryzyko pożarowe.
+          <strong>Zestaw jest poprawny i broni się w Strata 0.2.10</strong> — po rewizji z 3.11.2026
+          dwa zarzuty z wersji 1 okazały się nieaktualne: mostki PLX nie są wąskim gardłem w trybie
+          Layer Split (bo przez PCIe idzie tylko wektor aktywacji), a procesor wymieniamy na
+          20-rdzeniowy E5-2698 v4 za 262 zł. Zostaje jedno realne ryzyko: niezasilane risery taśmowe.
         </div>
       </div>
 
-      <h4>Płyta ASUS X99-E WS (~1650–1750 PLN) — krytyczna nieefektywność kosztowa</h4>
-      <p>Argumentacja jest bezbłędna technicznie. Dwa mostki Avago/Broadcom PLX PEX8747 są spięte z CPU
-      dwoma łączami nadrzędnymi PCIe 3.0 x16 (łącznie 32 linie z procesora). W hybrydowej inferencji MoE ruch
-      idzie trasą RAM → CPU → GPU (wektory aktywacji lub strumieniowanie wag). Dwie karty pod jednym mostkiem
-      PLX dzielą ten sam uplink x16 do CPU — dostają dokładnie taką samą przepustowość do RAM-u jak zwykłe
-      natywne gniazda x8/x8/x8/x8 bez PLX. Do tego blokada P2P DMA w sterownikach GeForce 30 uniemożliwia
-      wymianę danych wewnątrz switcha bez zmodyfikowanego jądra nvidia-open i ręcznej ingerencji w topologię
-      XML NCCL. Płacenie 1700 PLN za ponad 10-letnią płytę, gdy serwerowa C612 / X99 z natywnym rozkładem
-      x16/x8/x8/x8 (lub x8/x8/x8/x8 + 8 linii na dwa NVMe) kosztuje 350–500 PLN, marnuje
-      <strong>ponad 1200 PLN</strong>.</p>
+      <h4>1. Płyta ASUS X99-E WS — dlaczego ZOSTAJE (odwrócenie werdyktu z v1)</h4>
+      <p>Wersja 1 oceniała płytę przez pryzmat <code>ik_llama.cpp</code>, gdzie wagi nieustannie
+      strumieniują przez PCIe i wspólny uplink x16 pod mostkiem PLX PEX8747 faktycznie boli.
+      W <strong>Strata 0.2.10 w trybie Layer Split</strong> ten Argument przestaje działać:</p>
+      <ul class="clean">
+        <li><strong>Ruch między kartami to tylko wektor aktywacji</strong> — kilkaset kilobajtów
+        przesyłanych raz na całe okno weryfikacji spekulacyjnej, czyli raz na 4–5 tokenów. Narzut
+        110–150 ns na przejście przez PLX daje <strong>&lt;0,001 ms na okno ~10 ms</strong> — jest
+        niemierzalny, a nie „krytyczny".</li>
+        <li><strong>40 linii PCIe 3.0 z Xeona v4</strong> obsługuje 4 karty natywnie w układzie
+        x16/x8/x8/x8. PLX daje zapas na sloty pomocnicze (NVMe, karta sieciowa), nie wąskie gardło.</li>
+        <li><strong>EZ_PLUG (6-pin EATX12V_1)</strong> — dodatkowe +12 V dla slotów PCIe przy czterech
+        kartach. To realna korzyść, nie bajer: odciąża dwa przewody +12 V we wtyczce ATX 24-pin.</li>
+        <li><strong>USB BIOS Flashback</strong> — BIOS ≥ 3004 wgrywany przyciskiem bez procesora i bez
+        licencji IPMI (X10SRA-F wymaga wygenerowania klucza SFT-OOB-LIC po MAC-u BMC).</li>
+      </ul>
+      <p>Różnica ~700 zł względem Supermicro X10SRA-F zwraca się w wygodzie rozruchu, zapasie slotów
+      i braku zwrotu paczki do Niemiec. <strong>Płyta zostaje.</strong></p>
 
-      <div class="note danger">
-        <span class="h">Ryzyko pożarowe — niezasilane risery 30 cm</span>
-        <p><strong>Przeciążenie prądowe:</strong> pojedyncza RTX 3070 pobiera z samego gniazda płyty
-        (linie +12V i +3.3V, niezależnie od wtyczek 8-pin) od 45 W do 70 W. Cztery karty przez nieaktywne
-        risery taśmowe ciągną z płyty łącznie <strong>200–280 W</strong>. Standardowa wiązka ATX 24-pin ma
-        tylko dwa przewody +12V (ok. 120–144 W ciągłego obciążenia). Bez riserów z własnym zasilaniem 6-pin
-        bezpośrednio z zasilacza dochodzi do przegrzania i stopienia pinów +12V we wtyczce ATX 24-pin.</p>
+      <h4>2. Procesor — wymiana na E5-2698 v4 (20C/40T)</h4>
+      <p>W Strata wąskim gardłem jest moc AVX2, nie pasmo RAM. Dlatego liczy się nie liczba kanałów,
+      a <em>core-GHz</em> dostępne dla puli roboczej: 18 rdzeni fizycznych na AVX2 + 2 rdzenie
+      na kolejki CUDA, PCIe, tmux i Tailscale.</p>
+      <div class="tablewrap">
+        <div class="tscroll">
+          <table>
+            <thead><tr><th>Model</th><th>Rdzenie</th><th>Część robocza</th><th>L3 / TDP</th><th>Cena (3.11.2026)</th><th>Werdykt</th></tr></thead>
+            <tbody>
+              <tr><td class="model">E5-2690 v4<span class="sub">SR2N2</span></td><td data-l="Rdzenie">14C/28T</td>
+                <td data-l="Robocza">12 + 2</td><td data-l="L3">35 MB / 135 W</td>
+                <td data-l="Cena">147,60 zł</td><td data-l="Werdykt">za mało rdzeni</td></tr>
+              <tr><td class="model">E5-2697 v4<span class="sub">SR2JV</span></td><td data-l="Rdzenie">18C/36T</td>
+                <td data-l="Robocza">16 + 2</td><td data-l="L3">45 MB / 145 W</td>
+                <td data-l="Cena">240,47 zł</td><td data-l="Werdykt">dobra alternatywa</td></tr>
+              <tr><td class="model">E5-2698 v4<span class="sub">SR2JW</span></td><td data-l="Rdzenie">20C/40T</td>
+                <td data-l="Robocza">18 + 2</td><td data-l="L3">50 MB / 135 W</td>
+                <td data-l="Cena">262,00 zł</td><td data-l="Werdykt"><span class="pill g">WYBRANY</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <p>Za <strong>+22 zł</strong> względem 2697 v4 dostajesz dwa rdzenie więcej i o 5 MB większy L3,
+      przy <em>niższym</em> TDP (135 W vs 145 W). To najlepszy stosunek core-GHz do ceny na całym
+      rynku wtórnym X99.</p>
+
+      <div class="note warn">
+        <span class="h">Czego NIE kupować</span>
+        <p>Odrzucaj aukcje z kodem <code>QK…</code> / <code>QF…</code> — to próbki inżynieryjne (ES/QS)
+        z niedokończonym mikrokodem. Na IHS musi być wytłoczone <code>SR2JW</code> i pełna nazwa
+        <code>Intel Xeon E5-2698 v4</code>. Nie kupuj też wersji v3 (Haswell-EP, 22 nm) — inny socket
+        co prawda ten sam, ale brak wsparcia w niektórych BIOS-ach i o 30% gorsza wydajność na wat.</p>
+      </div>
+
+      <h4>3. Gdzie naprawdę jest wąskie gardło — model fizyczny v2</h4>
+      <ul class="clean">
+        <li><strong>61% ekspertów w VRAM:</strong> po odjęciu rezerwy (150 MiB), KV-cache 32K int8
+        (448 MiB), bufora prefillu 1024 (768 MiB) i wag dense 12 warstw (1 200 MiB) zostaje
+        ~5 350 MiB na kartę, czyli ~21,4 GB na cztery — około 15 000 z 24 576 par ekspertów.</li>
+        <li><strong>39% chybień × 2,19 GB/token ÷ 1,57 (spekulacja DFlash2)</strong> = z RAM-u trzeba
+        pobrać <strong>~0,544 GB na wygenerowany token</strong>.</li>
+        <li><strong>Przy 40 tok/s to ~21,8 GB/s</strong> — czyli 28% teoretycznego sufitu DDR4-2400
+        i ok. 43% realnego STREAM. Cztery kanały mają zapas, więc wąskim gardłem jest wyłącznie
+        przepustowość AVX2.</li>
+        <li><strong>Konsekwencja:</strong> EPYC z 8 kanałami daje przewagę tylko wtedy, gdy chybienia
+        policzy szybciej — a to wymaga rdzeni, nie pasma. Dlatego Xeon 20C jest lepszym zakupem niż
+        dopłata 2 500 zł do platformy SP3.</li>
+      </ul>
+
+      <h4>4. Platforma EPYC SP3 — realne koszty landed (listopad 2026)</h4>
+      <p>Weryfikacja na żywo na eBay.de obaliła dwie liczby z wersji 1 raportu:</p>
+      <ul class="clean">
+        <li><strong>Wszystkie tanie H11SSL-i idą z Shenzhen</strong> (sprzedawca quark32). Cena nie
+        zawiera 23% VAT ani opłaty agencji celnej — <em>„Der Käufer ist für alle Zollgebühren
+        verantwortlich"</em>. Combo za €585 to realnie <strong>~3 250 zł</strong>, nie 2 504 zł.</li>
+        <li><strong>Combo nie potwierdza rewizji płyty.</strong> Opis wymienia Rev 1.x (tylko Naples)
+        i Rev 2.x (Rome) obok siebie. Goła płyta <strong>REV 2.0 za €455</strong> ma rewizję w tytule
+        i wychodzi <strong>~2 542 zł</strong> z VAT.</li>
+        <li><strong>Odblokowany EPYC 7452 istnieje i jest tani:</strong> Doctor Memory (Manchester, UK,
+        190 752 ocen, 99,7%) sprzedaje <em>ENTSPERRT</em> za <strong>€169,88 pod drzwi</strong>
+        (≈ 748 zł, VAT w cenie przez eBay International Shipping). Ten sam sprzedawca jawnie wystawia
+        osobno „DELL LOCKED" — czyli sortuje sztuki, a nie sprzedaje w ciemno.</li>
+        <li><strong>Allegro nie ma ani jednej odblokowanej sztuki.</strong> Oferta za 1 122 zł to kod
+        <code>835TD</code> (Dell DPN), tytuł mówi wprost <em>„VENDOR LOCKED — pasuje tylko do DELL"</em>.
+        Droższe za 2 209 zł (<code>02JG944</code>) mają blokadę Lenovo.</li>
+      </ul>
+
+      <div class="tablewrap">
+        <div class="tscroll">
+          <table>
+            <thead><tr><th>Wariant</th><th>Baza (płyta + CPU + 128 GB + cooler)</th><th>Cały węzeł</th><th>Strata 0.2.10</th><th>zł / (tok/s)</th></tr></thead>
+            <tbody>
+              <tr><td class="model">W1b<span class="sub">X99-E WS + E5-2698 v4</span></td>
+                <td data-l="Baza">~3 050 zł</td><td data-l="Węzeł">~3 800 zł</td>
+                <td data-l="Strata"><span class="tps">38–42 t/s</span></td>
+                <td data-l="zł/tok">~95 zł</td></tr>
+              <tr><td class="model">W4b<span class="sub">H11SSL-i 2.0 + 7452 UK</span></td>
+                <td data-l="Baza">~5 460 zł</td><td data-l="Węzeł">~6 200 zł</td>
+                <td data-l="Strata"><span class="tps">55–75 t/s</span></td>
+                <td data-l="zł/tok">~95 zł</td></tr>
+              <tr><td class="model">W4a<span class="sub">H11SSL-i 2.0 + 7702P</span></td>
+                <td data-l="Baza">~7 450 zł</td><td data-l="Węzeł">~8 200 zł</td>
+                <td data-l="Strata"><span class="tps">65–75 t/s</span></td>
+                <td data-l="zł/tok">~115 zł</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <p><strong>Matematyka zł/(tok/s) między W1b a W4b to remis</strong> — płacisz dokładnie dwa razy
+      więcej za dwa razy wyższą prędkość. O wyborze decyduje ryzyko importowe (3 tygodnie, brak realnej
+      gwarancji, zwrot do Shenzhen na własny koszt) i dojrzałość silnika. W1b wygrywa na starcie,
+      W4b zostaje jako Faza 2 na tych samych kartach, riserach, zasilaczu i dysku.</p>
+
+      <div class="note ok">
+        <span class="h">Referencja pomiarowa</span>
+        <p>Punkt kalibracyjny dla całego modelu: Strata na <strong>jednej RTX 5070 12 GB + Ryzen 5 7600
+        + 64 GB DDR5-5200</strong> wyciąga <strong>48,3 tok/s</strong> przy ~80% chybień cache'u.
+        To dokładnie 84,6 GB/s ruchu do RAM — czyli sufit dual-channel DDR5, z zapasem na spekulację.
+        Nasz węzeł ma 39% chybień i cztery karty, więc wynik 38–42 t/s jest konserwatywny.</p>
+      </div>
+    </section>
+
+    <!-- ================= 5 ================= -->
+    <section id="s5">
+      <h2><span class="n">05</span>Lista zakupowa — ceny sprawdzone 3.11.2026</h2>
+
+      <p>Wszystkie ceny poniżej zostały odczytane z żywego DOM (Allegro przez przeglądarkę
+      antydetekcyjną, OLX bezpośrednio), a nie z indeksu wyszukiwarki. Kurs przyjęty do przeliczeń:
+      <span class="mono">1 EUR = 4,40 PLN</span>.</p>
+
+      <div class="tablewrap">
+        <div class="tscroll">
+          <table>
+            <thead><tr><th>Podzespół</th><th>Konkretny model</th><th>Cena</th><th>Link</th></tr></thead>
+            <tbody>
+              <tr>
+                <td class="model">Procesor<span class="sub">WYBRANY</span></td>
+                <td data-l="Model">Intel Xeon <strong>E5-2698 v4</strong> 20C/40T, 50 MB, 135 W, <span class="mono">SR2JW</span><br>
+                  <span class="sub">adbit_pl · używany · pasta w zestawie · 7 szt. sprzedanych</span></td>
+                <td data-l="Cena"><span class="tps">262,00 zł</span><br><span class="sub">+7,99 zł dostawa</span></td>
+                <td data-l="Link"><a class="buy" href="https://allegro.pl/oferta/intel-xeon-e5-2698-v4-20-core-40-ht-2-2-3-6-ghz-sr2jw-pasta-18785457393" target="_blank" rel="noopener">Kup na Allegro ↗</a></td>
+              </tr>
+              <tr>
+                <td class="model">Procesor<span class="sub">taniej / alternatywa</span></td>
+                <td data-l="Model">Intel Xeon <strong>E5-2697 v4</strong> 18C/36T, 45 MB, 145 W, <span class="mono">SR2JV</span><br>
+                  <span class="sub">BLASTNET_PL · używany · 14 dni zwrotu</span></td>
+                <td data-l="Cena">240,47 zł<br><span class="sub">+15,00 zł dostawa</span></td>
+                <td data-l="Link"><a class="buy alt" href="https://allegro.pl/oferta/intel-xeon-18c-e5-2697-v4-2-30-ghz-45m-145w-sr2jv-18795442727" target="_blank" rel="noopener">Zobacz ↗</a></td>
+              </tr>
+              <tr>
+                <td class="model">Procesor<span class="sub">budżet</span></td>
+                <td data-l="Model">Intel Xeon <strong>E5-2690 v4</strong> 14C/28T, 35 MB, <span class="mono">SR2N2</span></td>
+                <td data-l="Cena">147,60 zł</td>
+                <td data-l="Link"><a class="buy alt" href="https://allegro.pl/oferta/intel-xeon-14c-e5-2690-v4-2-60-ghz-35m-135w-sr2n2-18795441982" target="_blank" rel="noopener">Zobacz ↗</a></td>
+              </tr>
+              <tr>
+                <td class="model">Pamięć RAM<span class="sub">128 GB · WYBRANA</span></td>
+                <td data-l="Model"><strong>4× 32 GB SK hynix HMA84GR7MFR4N-UH</strong><br>
+                  <span class="mono">32GB 2Rx4 PC4-2400T-RB1-11</span> · ECC Registered<br>
+                  <span class="sub">OLX Wyszków · kulesza.jakub (5,0/5, 4 oceny) · foto-zweryfikowane 3.11</span></td>
+                <td data-l="Cena"><span class="tps">1 750 zł</span><br><span class="sub">437,50 zł / kość</span></td>
+                <td data-l="Link"><a class="buy" href="https://www.olx.pl/d/oferta/ddr4-ecc-32-gb-4-kosci-128gb-CID99-ID1cWNZ2.html" target="_blank" rel="noopener">Kup na OLX ↗</a></td>
+              </tr>
+              <tr>
+                <td class="model">Pamięć RAM<span class="sub">128 GB · opcja „bezpieczna"</span></td>
+                <td data-l="Model"><strong>2× komplet 2× 32 GB Samsung</strong> DDR4-2400 ECC RDIMM, <em>nowe</em><br>
+                  <span class="sub">OLX Kaski · sprzedawca pokazał Memtest86+ PASS na dual-Xeon X99<br>(255 GB, 4 h 18 min, 0 błędów) — najlepszy dowód jakości na rynku</span></td>
+                <td data-l="Cena">2 × 1 000 zł<br><span class="sub">2 000 zł · 500 zł / kość</span></td>
+                <td data-l="Link"><a class="buy alt" href="https://www.olx.pl/d/oferta/pamiec-ram-serwerowa-2x32gb-ddr4-ecc-registered-rdimm-2400mhz-samsung-CID99-ID1cVaNF.html" target="_blank" rel="noopener">Zobacz ↗</a></td>
+              </tr>
+              <tr>
+                <td class="model">Dysk SSD<span class="sub">1 TB</span></td>
+                <td data-l="Model"><strong>SanDisk Ultra 3D 1 TB</strong> 2,5" SATA, z DRAM<br>
+                  <span class="sub">OLX, Żyrardów · stan 95% · gwarancja + faktura · potwierdzone 3.11</span></td>
+                <td data-l="Cena">429 zł</td>
+                <td data-l="Link"><a class="buy" href="https://www.olx.pl/d/oferta/dysk-ssd-1tb-2-5-sata-sandisk-ultra-3d-sdssdh31000g-dram-stan-95-gwarancja-faktura-vat-marza-CID99-ID1cRAY0.html" target="_blank" rel="noopener">Kup na OLX ↗</a></td>
+              </tr>
+              <tr>
+                <td class="model">Zasilacz<span class="sub">1200 W</span></td>
+                <td data-l="Model"><strong>Corsair HX1200</strong> 1200 W 80+ Platinum, single-rail<br>
+                  <span class="sub">8× PCIe 8-pin — dokładnie tyle, ile trzeba dla 4× RTX 3070</span></td>
+                <td data-l="Cena">399 zł</td>
+                <td data-l="Link"><a class="buy" href="https://allegro.pl/oferta/zasilacz-corsair-hx1200-1200-w-80-plus-platinum-19032704470" target="_blank" rel="noopener">Kup na Allegro ↗</a></td>
+              </tr>
+              <tr>
+                <td class="model">Risery<span class="sub">4 szt.</span></td>
+                <td data-l="Model">Ekranowana taśma <strong>PCIe 3.0 x16 → x16, 30 cm</strong><br>
+                  <span class="sub">69 zł/szt. × 4 = 276 zł · NIE bierz nieekranowanych</span></td>
+                <td data-l="Cena">276 zł</td>
+                <td data-l="Link"><a class="buy" href="https://allegro.pl/oferta/tasma-riser-pci-e-pcie-3-0-express-x16-x16-30cm-12432322718" target="_blank" rel="noopener">Kup na Allegro ↗</a></td>
+              </tr>
+              <tr>
+                <td class="model">Przejściówka<span class="sub">obowiązkowa</span></td>
+                <td data-l="Model">2× Molex → PCIe 6-pin<br>
+                  <span class="sub">zasila gniazdo EATX12V_1 / EZ_PLUG obok dwóch 8-pin CPU</span></td>
+                <td data-l="Cena">4,35 zł</td>
+                <td data-l="Link"><a class="buy" href="https://allegro.pl/oferta/adapter-molex-pci-express-akyga-ak-ca-13-0-15-m-17852260888" target="_blank" rel="noopener">Kup na Allegro ↗</a></td>
+              </tr>
+              <tr>
+                <td class="model">Pasta</td>
+                <td data-l="Model"><strong>Arctic MX-4</strong> 8 g — wystarczy na CPU i odświeżenie kart</td>
+                <td data-l="Cena">20,18 zł</td>
+                <td data-l="Link"><a class="buy" href="https://allegro.pl/oferta/arctic-mx-4-pasta-termoprzewodzaca-8-5-w-mk-8-g-actcp00008b-18519062422" target="_blank" rel="noopener">Kup na Allegro ↗</a></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="note ok">
+        <span class="h">Suma bazy (bez posiadanych 4× RTX 3070 i płyty)</span>
+        <p>CPU 262 + RAM 1 750 + SSD 429 + PSU 399 + risery 276 + drobnica ~25 =
+        <strong>~3 140 zł</strong>. Płyta ASUS X99-E WS (~1 340 zł z VAT, eBay) jest już zamówiona.
+        Cały węzeł domyka się w <strong>~3 800 zł</strong> — o ~700 zł taniej niż wariant z X10SRA-F
+        po doliczeniu zwrotu paczki, i bez czekania na dostawę z Shenzhen.</p>
       </div>
 
       <div class="note warn">
-        <span class="h">Błędy transmisji PCIe 3.0 (8 GT/s)</span>
-        <p>Pasywne, nieekranowane taśmy 30 cm przy PCIe 3.0 generują ogromne przesłuchy i odbicia sygnału.
-        W klastrze 4× GPU blisko siebie: masowe błędy AER w <code>dmesg</code>, spadki linku do PCIe 1.1/2.0
-        lub zawieszanie llama.cpp / vLLM przy skokach poboru prądu. Poza obudowę — wyłącznie ekranowane kable
-        Twinax (PCIe 3.0/4.0) lub risery płytkowe z izolowanym zasilaniem 6-pin. W czystym MoE z RAM-u nawet
-        riser x1/x4 z własnym zasilaniem zachowa <strong>95% wydajności generacji</strong> (przesyłane są
-        kilobajtowe aktywacje), choć spowolni pierwsze ładowanie modelu do VRAM.</p>
+        <span class="h">Dlaczego NIE Rzeszów i dlaczego nie Allegro/eBay</span>
+        <p>Oferta z Rzeszowa (4× 32 GB za 1 800 zł) jest z 7 października, a <em>ten sam sprzedawca podniósł</em>
+        cenę swojego drugiego ogłoszenia (8× 32 GB) z 3 200 zł na <strong>3 500 zł</strong> — czyli o 9,4%
+        w ciągu miesiąca. Stara cena 1 800 zł najprawdopodobniej nie jest już aktualna przy kontakcie.<br>
+        <strong>Allegro odpada cenowo:</strong> pojedyncza kość 32 GB PC4-2400T RDIMM to tam 649–849 zł,
+        czyli <em>2 600–3 400 zł</em> za 128 GB. <strong>eBay.de też:</strong> 32 GB RDIMM 2400 MHz od
+        sprzedawców z UE kosztuje €120–150, czyli 528–660 zł/szt. Poza tym większość niemieckich ofert to
+        <span class="mono">2Rx8</span> albo <span class="mono">LRDIMM</span> — nie nasza specyfikacja.
+        Realny rynek na tę kość to dziś OLX: <strong>437–500 zł za sztukę 32 GB 2Rx4</strong>.</p>
       </div>
 
-      <h4>Xeon E5-2690 v4 (Broadwell-EP) — brak AVX-512 i VNNI</h4>
-      <p>14 rdzeni / 28 wątków wystarcza do nasycenia 4 kanałów DDR4-2400 przy prostych kwantyzacjach, ale
-      Broadwell nie ma AVX-512 ani AVX-512 VNNI (wprowadzonych w Skylake-SP / Cascade Lake oraz Zen 4).
-      W nowoczesnych silnikach (ik_llama.cpp, KTransformers) AVX-512 VNNI przyspiesza mnożenie macierzy
-      skwantyzowanych ekspertów na CPU <strong>ponad 2-krotnie</strong> w fazie prefillu.</p>
-
-      <h4>Alokacja budżetu — rewizja pod maksymalizację t/s</h4>
-      <p>Zamiast ~1700 PLN na ASUS X99-E WS i męczenia się z czterema 8-gigabajtowymi kartami na pasywnych
-      taśmach, odzyskane ~1200 PLN oraz środki z czterech RTX 3070 lepiej przeznaczyć na:</p>
-      <ul class="clean">
-        <li>zwykłą płytę X99 / C612 z rozkładem x8/x8/x8/x8 + NVMe M.2 (<strong>~400–500 PLN</strong>)
-        oraz 8× 16 GB DDR4-2400 ECC RDIMM zamiast 4× 32 GB,</li>
-        <li>dysk NVMe PCIe 3.0 x4 zamiast SATA SSD,</li>
-        <li>mniejszą liczbę kart na rzecz większej pojemności pojedynczego układu — np. <strong>2× RTX 3090
-        24 GB (48 GB VRAM)</strong> wpięte bezpośrednio w płytę bez riserów, lub przy niższym budżecie
-        jedna karta 24 GB na warstwy uwagi i KV-Cache plus tańsze karty pomocnicze.</li>
-      </ul>
-
-      <div class="note ok">
-        <span class="h">Referencja</span>
-        <p>Praktyczny test pokazujący, jak silnik Strata wyciska około 40 tokenów/s z Qwen 3.8 Flash 177B
-        przy zaledwie 12 GB VRAM i RAM: <em>„This Engine Makes 177B Qwen 3.8 Flash Extremely Fast with 12GB”</em>.</p>
+      <div class="note danger">
+        <span class="h">Jedno ryzyko, którego nie da się obejść tanio</span>
+        <p><strong>Zasilanie slotów PCIe.</strong> Pojedyncza RTX 3070 pobiera z samego gniazda płyty
+        45–70 W niezależnie od wtyczek 8-pin. Cztery karty przez pasywne risery to <strong>200–280 W</strong>
+        ciągnięte przez dwa przewody +12 V wtyczki ATX 24-pin (projektowo ~120–144 W). Dlatego:
+        (1) podłącz 6-pin do EATX12V_1 / EZ_PLUG, (2) każdą kartę zasilaj <em>osobnym</em> przewodem
+        PCIe 8-pin — nigdy przez rozgałęziacz „Y", (3) kup risery ekranowane, bo nieekranowane taśmy
+        30 cm przy 8 GT/s sypią błędami AER i potrafią zrzucić link do PCIe 1.1.</p>
       </div>
     </section>
 
@@ -607,8 +805,8 @@
 
 <footer>
   <div class="wrap row">
-    <div class="tag">4× RTX 3070 · Xeon E5-2690 v4 · 128 GB DDR4-2400 ECC</div>
-    <div>Raport techniczny · listopad 2026</div>
+    <div class="tag">4× RTX 3070 · Xeon E5-2698 v4 · 128 GB DDR4-2400 ECC RDIMM</div>
+    <div>Raport techniczny · wersja 2.0 · 3 listopada 2026</div>
   </div>
 </footer>
 
