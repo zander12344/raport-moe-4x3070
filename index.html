@@ -1,0 +1,616 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>4× RTX 3070 + Xeon E5-2690 v4 — hybrydowa inferencja MoE</title>
+<meta name="description" content="Realna wydajność klastra 4× RTX 3070 (32 GB VRAM) + 128 GB DDR4-2400 + Xeon E5-2690 v4 w hybrydowej inferencji dużych modeli MoE: tokeny/s, optymalizacje -ot, ik_llama.cpp, Strata, audyt plata X99 i riserów.">
+<meta name="color-scheme" content="dark">
+<style>
+  :root{
+    --bg:#080a0e; --bg2:#0d1117; --panel:#11161f; --panel2:#161c27;
+    --border:#212836; --border2:#2b3548;
+    --fg:#dbe2ee; --fg2:#a9b4c6; --muted:#7d8798;
+    --cy:#38bdf8; --cy2:#0ea5e9; --vi:#a78bfa; --gr:#34d399;
+    --wa:#fbbf24; --rd:#f87171; --pk:#f472b6;
+    --mono:ui-monospace,"JetBrains Mono","Cascadia Code",Consolas,"SF Mono",monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,"Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth;scroll-padding-top:24px}
+  body{
+    margin:0;background:var(--bg);color:var(--fg);
+    font-family:var(--sans);font-size:16.5px;line-height:1.68;
+    -webkit-font-smoothing:antialiased;
+    background-image:
+      radial-gradient(900px 500px at 12% -8%,rgba(56,189,248,.10),transparent 65%),
+      radial-gradient(800px 460px at 92% 2%,rgba(167,139,250,.09),transparent 62%),
+      linear-gradient(180deg,#080a0e 0%,#0a0d13 40%,#080a0e 100%);
+    background-attachment:fixed;
+  }
+  .wrap{max-width:1220px;margin:0 auto;padding:0 22px}
+
+  /* ---------- HERO ---------- */
+  header.hero{padding:74px 0 40px;border-bottom:1px solid var(--border)}
+  .eyebrow{
+    display:inline-flex;align-items:center;gap:9px;
+    font-family:var(--mono);font-size:11.5px;letter-spacing:.19em;text-transform:uppercase;
+    color:var(--cy);border:1px solid rgba(56,189,248,.32);background:rgba(56,189,248,.07);
+    padding:6px 13px;border-radius:999px;margin-bottom:26px;
+  }
+  .eyebrow .dot{width:6px;height:6px;border-radius:50%;background:var(--cy);box-shadow:0 0 10px var(--cy);animation:pulse 2.4s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  h1{
+    font-size:clamp(2rem,4.6vw,3.35rem);line-height:1.1;margin:0 0 18px;
+    letter-spacing:-.028em;font-weight:800;
+    background:linear-gradient(135deg,#ffffff 0%,#cfe3f5 42%,#7dd3fc 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  .lede{font-size:1.075rem;color:var(--fg2);max-width:76ch;margin:0}
+  .lede strong{color:var(--fg);font-weight:600}
+
+  /* spec chips */
+  .specs{display:flex;flex-wrap:wrap;gap:10px;margin:30px 0 0}
+  .spec{
+    display:flex;align-items:center;gap:10px;
+    background:var(--panel);border:1px solid var(--border);border-radius:11px;
+    padding:11px 15px;font-size:13.5px;font-family:var(--mono);color:var(--fg2);
+  }
+  .spec b{color:var(--fg);font-weight:700}
+  .spec .k{color:var(--muted);font-size:11px;letter-spacing:.1em;text-transform:uppercase}
+
+  /* ---------- METRICS ---------- */
+  .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin:38px 0 0}
+  .metric{
+    background:linear-gradient(160deg,var(--panel) 0%,var(--bg2) 100%);
+    border:1px solid var(--border);border-radius:14px;padding:20px 18px;position:relative;overflow:hidden;
+  }
+  .metric::before{content:"";position:absolute;inset:0 auto 0 0;width:2px;background:var(--cy);opacity:.85}
+  .metric.v::before{background:var(--vi)} .metric.g::before{background:var(--gr)}
+  .metric.w::before{background:var(--wa)} .metric.r::before{background:var(--rd)}
+  .metric .val{font-family:var(--mono);font-size:1.6rem;font-weight:700;color:#fff;letter-spacing:-.02em;line-height:1.15}
+  .metric.v .val{color:var(--vi)} .metric.g .val{color:var(--gr)}
+  .metric.w .val{color:var(--wa)} .metric.r .val{color:var(--rd)}
+  .metric .lbl{font-size:11.5px;text-transform:uppercase;letter-spacing:.13em;color:var(--muted);margin-top:7px}
+
+  /* ---------- LAYOUT ---------- */
+  .layout{display:grid;grid-template-columns:250px minmax(0,1fr);gap:52px;padding:56px 0 80px}
+  @media(max-width:960px){.layout{grid-template-columns:1fr;gap:30px;padding-top:38px}}
+
+  nav.toc{position:sticky;top:24px;align-self:start;font-size:13.5px}
+  @media(max-width:960px){nav.toc{position:static;padding-bottom:8px;border-bottom:1px solid var(--border)}}
+  nav.toc .ttl{font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);margin-bottom:14px;font-family:var(--mono)}
+  nav.toc ol{list-style:none;margin:0;padding:0;counter-reset:toc}
+  nav.toc li{margin:0 0 2px}
+  nav.toc a{
+    display:block;padding:7px 11px;border-left:2px solid transparent;border-radius:0 7px 7px 0;
+    color:var(--fg2);text-decoration:none;line-height:1.35;transition:.16s;
+  }
+  nav.toc a:hover{color:#fff;background:var(--panel);border-left-color:var(--cy)}
+  nav.toc .num{font-family:var(--mono);color:var(--cy);font-size:11.5px;margin-right:7px;opacity:.75}
+
+  main{min-width:0}
+  section{margin-bottom:64px;scroll-margin-top:20px}
+  section > h2{
+    font-size:1.62rem;line-height:1.22;margin:0 0 22px;letter-spacing:-.018em;font-weight:750;
+    display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;
+    padding-bottom:14px;border-bottom:1px solid var(--border);
+  }
+  section > h2 .n{
+    font-family:var(--mono);font-size:.78rem;color:var(--cy);font-weight:600;
+    border:1px solid rgba(56,189,248,.3);background:rgba(56,189,248,.07);
+    padding:3px 9px;border-radius:7px;letter-spacing:.05em;flex:none;
+  }
+  h3{
+    font-size:1.13rem;margin:34px 0 14px;font-weight:700;letter-spacing:-.01em;color:#fff;
+    display:flex;align-items:center;gap:10px;
+  }
+  h3::before{content:"";width:3px;height:17px;border-radius:2px;background:linear-gradient(180deg,var(--cy),var(--vi));flex:none}
+  h4{font-size:1rem;margin:24px 0 10px;font-weight:650;color:var(--fg)}
+  p{margin:0 0 15px;color:var(--fg2)}
+  p strong,li strong{color:#fff;font-weight:640}
+  a{color:var(--cy);text-decoration:none;border-bottom:1px solid rgba(56,189,248,.3)}
+  a:hover{border-bottom-color:var(--cy)}
+
+  /* ---------- BULLETS ---------- */
+  ul.clean{list-style:none;margin:0 0 18px;padding:0}
+  ul.clean > li{position:relative;padding-left:22px;margin-bottom:13px;color:var(--fg2)}
+  ul.clean > li::before{
+    content:"";position:absolute;left:2px;top:.66em;width:7px;height:7px;border-radius:2px;
+    background:var(--cy);opacity:.8;transform:rotate(45deg);
+  }
+  ul.clean ul{list-style:none;margin:11px 0 4px;padding:0}
+  ul.clean ul > li{position:relative;padding-left:20px;margin-bottom:9px;font-size:.965rem;color:var(--muted)}
+  ul.clean ul > li::before{content:"";position:absolute;left:4px;top:.72em;width:5px;height:5px;border-radius:50%;background:var(--vi);opacity:.85}
+  ul.clean ul strong{color:var(--fg)}
+
+  /* ---------- TABLE ---------- */
+  .tablewrap{
+    border:1px solid var(--border);border-radius:14px;overflow:hidden;margin:22px 0 18px;
+    background:var(--panel);
+  }
+  .tscroll{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;font-size:14px;min-width:720px}
+  thead th{
+    text-align:left;padding:13px 15px;background:var(--panel2);
+    font-family:var(--mono);font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;
+    color:var(--muted);font-weight:600;border-bottom:1px solid var(--border2);white-space:nowrap;
+  }
+  tbody td{padding:13px 15px;border-bottom:1px solid rgba(33,40,54,.75);color:var(--fg2);vertical-align:top}
+  tbody tr:last-child td{border-bottom:none}
+  tbody tr:hover{background:rgba(56,189,248,.045)}
+  td.model{color:#fff;font-weight:600}
+  td.model .sub{display:block;font-weight:400;font-size:12px;color:var(--muted);margin-top:2px;font-family:var(--mono)}
+  .mono{font-family:var(--mono);font-size:12.8px}
+  .tps{color:#fff;font-weight:700;font-family:var(--mono);white-space:nowrap}
+  .bar{height:5px;border-radius:3px;background:var(--border2);margin-top:7px;overflow:hidden;min-width:78px}
+  .bar span{display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,var(--cy),var(--vi))}
+  .bar.q span{background:linear-gradient(90deg,var(--gr),var(--cy))}
+  .bar.r span{background:linear-gradient(90deg,var(--wa),var(--rd))}
+  .pp{font-family:var(--mono);font-size:12.5px;color:var(--fg2);white-space:nowrap}
+  .pill{
+    display:inline-block;font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:999px;
+    border:1px solid var(--border2);color:var(--fg2);background:var(--bg2);white-space:nowrap;
+  }
+  .pill.g{color:var(--gr);border-color:rgba(52,211,153,.35);background:rgba(52,211,153,.08)}
+  .pill.w{color:var(--wa);border-color:rgba(251,191,36,.32);background:rgba(251,191,36,.08)}
+  .pill.r{color:var(--rd);border-color:rgba(248,113,113,.32);background:rgba(248,113,113,.08)}
+  .pill.c{color:var(--cy);border-color:rgba(56,189,248,.3);background:rgba(56,189,248,.08)}
+
+  /* ---------- CALLOUTS ---------- */
+  .note{
+    border:1px solid var(--border2);border-left:3px solid var(--cy);
+    background:linear-gradient(90deg,rgba(56,189,248,.07),rgba(56,189,248,.015));
+    border-radius:0 12px 12px 0;padding:16px 20px;margin:20px 0;font-size:.97rem;
+  }
+  .note.warn{border-left-color:var(--wa);background:linear-gradient(90deg,rgba(251,191,36,.08),rgba(251,191,36,.015))}
+  .note.danger{border-left-color:var(--rd);background:linear-gradient(90deg,rgba(248,113,113,.09),rgba(248,113,113,.015))}
+  .note.ok{border-left-color:var(--gr);background:linear-gradient(90deg,rgba(52,211,153,.08),rgba(52,211,153,.015))}
+  .note .h{
+    display:block;font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--cy);margin-bottom:6px;font-weight:700;
+  }
+  .note.warn .h{color:var(--wa)} .note.danger .h{color:var(--rd)} .note.ok .h{color:var(--gr)}
+  .note p:last-child{margin-bottom:0}
+
+  code{
+    font-family:var(--mono);font-size:.87em;background:rgba(56,189,248,.1);color:#9fdcff;
+    padding:2px 6px;border-radius:5px;border:1px solid rgba(56,189,248,.16);
+    word-break:break-word;
+  }
+  pre{
+    background:#05070a;border:1px solid var(--border2);border-radius:11px;
+    padding:15px 17px;overflow-x:auto;margin:16px 0;font-size:13px;line-height:1.6;
+  }
+  pre code{background:none;border:none;padding:0;color:#bfe8ff;font-size:13px}
+
+  /* ---------- CARDS ---------- */
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(255px,1fr));gap:14px;margin:20px 0}
+  .card{
+    background:var(--panel);border:1px solid var(--border);border-radius:13px;padding:18px 19px;
+    transition:.18s;
+  }
+  .card:hover{border-color:var(--border2);transform:translateY(-2px)}
+  .card .ch{font-weight:700;color:#fff;margin-bottom:7px;font-size:.985rem;display:flex;align-items:center;gap:8px}
+  .card .ch .ic{color:var(--cy);font-family:var(--mono);font-size:.85rem}
+  .card p{margin:0;font-size:.93rem;color:var(--muted)}
+  .card .kv{font-family:var(--mono);font-size:12.5px;color:var(--cy);margin-top:9px}
+
+  /* ---------- VERDICT ---------- */
+  .verdict{
+    display:grid;grid-template-columns:auto 1fr;gap:22px;align-items:center;
+    border:1px solid rgba(248,113,113,.3);border-radius:16px;padding:24px;margin:26px 0;
+    background:linear-gradient(135deg,rgba(248,113,113,.08),rgba(251,191,36,.03) 60%,transparent);
+  }
+  @media(max-width:600px){.verdict{grid-template-columns:1fr;gap:14px}}
+  .score{text-align:center;font-family:var(--mono)}
+  .score .big{font-size:2.5rem;font-weight:800;color:var(--rd);line-height:1;letter-spacing:-.03em}
+  .score .sub{font-size:11px;color:var(--muted);letter-spacing:.14em;text-transform:uppercase;margin-top:7px}
+  .verdict .txt strong{color:#fff}
+
+  /* ---------- FOOTER ---------- */
+  footer{border-top:1px solid var(--border);padding:34px 0 60px;color:var(--muted);font-size:13px}
+  footer .row{display:flex;justify-content:space-between;gap:18px;flex-wrap:wrap;align-items:center}
+  footer .tag{font-family:var(--mono);font-size:11.5px;letter-spacing:.1em;text-transform:uppercase}
+
+  /* ---------- MOBILE TABLE ---------- */
+  @media(max-width:760px){
+    body{font-size:16px}
+    table{min-width:0}
+    thead{display:none}
+    tbody tr{display:block;border-bottom:1px solid var(--border2);padding:13px 15px}
+    tbody tr:last-child{border-bottom:none}
+    tbody td{display:block;border:none;padding:5px 0}
+    tbody td::before{
+      content:attr(data-l);display:block;font-family:var(--mono);font-size:10px;
+      letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:1px;
+    }
+    td.model{font-size:1.02rem;padding-bottom:9px}
+    td.model::before{display:none}
+    .bar{max-width:180px}
+  }
+
+  @media print{
+    body{background:#fff;color:#111}
+    header.hero,.metrics,.toc,.note{break-inside:avoid}
+    .card,table{break-inside:avoid}
+    nav.toc{display:none}
+    .layout{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <span class="eyebrow"><span class="dot"></span>Raport techniczny · hybrydowa inferencja MoE</span>
+    <h1>4× RTX 3070 + Xeon E5-2690 v4:<br>ile realnie wyciśniesz tokenów na sekundę</h1>
+    <p class="lede">
+      Konfiguracja oparta na <strong>czterech kartach RTX 3070 (32 GB VRAM)</strong> oraz
+      <strong>128 GB czterokanałowej DDR4-2400</strong> na Xeonie E5-2690 v4 w hybrydowej inferencji
+      dużych modeli MoE jest fundamentalnie ograniczona realną przepustowością pamięci RAM
+      (<strong>~52–58 GB/s</strong>) oraz brakiem AVX-512/VNNI. Przy odpowiednim podziale warstw —
+      uwaga i KV-Cache w VRAM, rzadcy eksperci MoE w RAM — zestaw wygeneruje od
+      <strong>6 do 125 tokenów/s</strong>, zależnie od architektury, liczby aktywnych parametrów
+      i stopnia stratnej kwantyzacji.
+    </p>
+
+    <div class="specs">
+      <div class="spec"><span class="k">VRAM</span><b>32 GB</b> · 4× 8 GB GDDR6</div>
+      <div class="spec"><span class="k">RAM</span><b>128 GB</b> DDR4-2400 QC</div>
+      <div class="spec"><span class="k">CPU</span><b>E5-2690 v4</b> · 14C/28T</div>
+      <div class="spec"><span class="k">AVX-512</span><b style="color:var(--rd)">brak</b></div>
+    </div>
+
+    <div class="metrics">
+      <div class="metric"><div class="val">6–125</div><div class="lbl">tokenów / s (generacja)</div></div>
+      <div class="metric v"><div class="val">448 GB/s</div><div class="lbl">przepustowość 1× RTX 3070</div></div>
+      <div class="metric g"><div class="val">52–58 GB/s</div><div class="lbl">realny odczyt z RAM (AVX2)</div></div>
+      <div class="metric w"><div class="val">~27–28 GB</div><div class="lbl">VRAM na wagi (po buforach)</div></div>
+      <div class="metric r"><div class="val">3,5 / 10</div><div class="lbl">ocena inżynieryjna zestawu</div></div>
+    </div>
+  </div>
+</header>
+
+<div class="wrap layout">
+
+  <nav class="toc">
+    <div class="ttl">Spis treści</div>
+    <ol>
+      <li><a href="#s1"><span class="num">01</span>Tokeny/s ze stratą kwantyzacji</a></li>
+      <li><a href="#s2"><span class="num">02</span>Szybsza generacja tekstu</a></li>
+      <li><a href="#s3"><span class="num">03</span>Nowe architektury 2025/26</a></li>
+      <li><a href="#s4"><span class="num">04</span>Audyt rynkowy i techniczny</a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+    <!-- ================= 1 ================= -->
+    <section id="s1">
+      <h2><span class="n">01</span>Czego realnie wyciągniesz tokenów na sekundę</h2>
+
+      <p>W architekturze hybrydowej o szybkości generowania tekstu (Token Generation — TG) decyduje to,
+      ile gigabajtów wag procesor i karty graficzne muszą odczytać z pamięci na <em>jeden</em> wygenerowany token.</p>
+
+      <ul class="clean">
+        <li><strong>Pula VRAM (4× RTX 3070 = 32 GB GDDR6):</strong> każda karta ma przepustowość 448 GB/s,
+        ale po odjęciu buforów kontekstu CUDA (~0,8 GB na kartę) oraz KV-Cache, do realnego wykorzystania
+        na wagi zostaje około <strong>27–28 GB</strong>.</li>
+        <li><strong>Pula RAM (128 GB DDR4-2400 Quad-Channel):</strong> teoretyczna przepustowość to
+        <code>2400 MT/s × 8 B × 4 = 76,8 GB/s</code>. W praktyce kontroler pamięci Broadwell-EP
+        (Xeon E5-2690 v4) przy wielowątkowym odczycie AVX2 w llama.cpp osiąga <strong>52–56 GB/s</strong>.</li>
+      </ul>
+
+      <p>Poniższa tabela przedstawia realne osiągi tego zestawu przy optymalnym rozkładzie tensorów
+      (<code>-ot</code> w llama.cpp / ik_llama.cpp lub silnik Strata): warstwy uwagi (Attention) oraz eksperci
+      współdzieleni (Shared Experts) trafiają do 32 GB VRAM, a eksperci rzadcy (Routed Experts) są liczeni
+      z poziomu 128 GB RAM.</p>
+
+      <div class="tablewrap">
+        <div class="tscroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Model i architektura</th>
+                <th>Aktywne parametry</th>
+                <th>Kwantyzacja (rozmiar)</th>
+                <th>Generacja (t/s)</th>
+                <th>Prefill promptu (t/s)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="model">Qwen3.6-35B-A3B<span class="sub">MoE · 100% VRAM</span></td>
+                <td data-l="Aktywne">3,0B z 35B</td>
+                <td data-l="Kwantyzacja"><span class="pill g">Q4_K_M</span> <span class="mono">22 GB</span></td>
+                <td data-l="Generacja"><span class="tps">90 – 125 t/s</span><div class="bar q"><span style="width:100%"></span></div></td>
+                <td data-l="Prefill" class="pp">1600 – 2400 t/s</td>
+              </tr>
+              <tr>
+                <td class="model">Qwen3.8-27B<span class="sub">Hybryda Dense · Mamba2 + Att</span></td>
+                <td data-l="Aktywne">27B (gęsty)</td>
+                <td data-l="Kwantyzacja"><span class="pill c">IQ4_XS</span> <span class="mono">16 GB</span></td>
+                <td data-l="Generacja"><span class="tps">42 – 58 t/s</span><div class="bar q"><span style="width:46%"></span></div></td>
+                <td data-l="Prefill" class="pp">1100 – 1700 t/s</td>
+              </tr>
+              <tr>
+                <td class="model">Qwen3-Next-80B-A3B<span class="sub">MoE · VRAM + RAM</span></td>
+                <td data-l="Aktywne">3,3B z 80B</td>
+                <td data-l="Kwantyzacja"><span class="pill">Q4_K_M</span> <span class="mono">46 GB</span></td>
+                <td data-l="Generacja"><span class="tps">28 – 42 t/s</span><div class="bar"><span style="width:34%"></span></div></td>
+                <td data-l="Prefill" class="pp">450 – 750 t/s</td>
+              </tr>
+              <tr>
+                <td class="model">Qwen3.8-Flash-Next 177B<span class="sub">Ultra-sparse + 51B N-gram</span></td>
+                <td data-l="Aktywne">6,0B + 51B N-gram</td>
+                <td data-l="Kwantyzacja"><span class="pill">Q4 / 3.84 bpw</span> <span class="mono">85 GB</span></td>
+                <td data-l="Generacja"><span class="tps">16 – 24 t/s</span><div class="bar"><span style="width:19%"></span></div><div class="mono" style="margin-top:6px;color:var(--gr)">Strata: 35–45 t/s</div></td>
+                <td data-l="Prefill" class="pp">350 – 850 t/s</td>
+              </tr>
+              <tr>
+                <td class="model">Nemotron-3-Super-120B<span class="sub">MoE</span></td>
+                <td data-l="Aktywne">12B z 120B</td>
+                <td data-l="Kwantyzacja"><span class="pill w">IQ3_XS</span> <span class="mono">54 GB</span></td>
+                <td data-l="Generacja"><span class="tps">11 – 16 t/s</span><div class="bar r"><span style="width:13%"></span></div></td>
+                <td data-l="Prefill" class="pp">220 – 380 t/s</td>
+              </tr>
+              <tr>
+                <td class="model">Qwen3-235B-A22B<span class="sub">MoE</span></td>
+                <td data-l="Aktywne">22B z 235B</td>
+                <td data-l="Kwantyzacja"><span class="pill w">IQ3_XXS</span> <span class="mono">92 GB</span></td>
+                <td data-l="Generacja"><span class="tps">6,5 – 9,5 t/s</span><div class="bar r"><span style="width:8%"></span></div></td>
+                <td data-l="Prefill" class="pp">120 – 210 t/s</td>
+              </tr>
+              <tr>
+                <td class="model">Qwen3.5-397B-A17B<span class="sub">MoE · duża strata</span></td>
+                <td data-l="Aktywne">17B z 397B</td>
+                <td data-l="Kwantyzacja"><span class="pill w">IQ2_XXS</span> <span class="mono">112 GB</span></td>
+                <td data-l="Generacja"><span class="tps">8,0 – 11,5 t/s</span><div class="bar r"><span style="width:9%"></span></div></td>
+                <td data-l="Prefill" class="pp">110 – 180 t/s</td>
+              </tr>
+              <tr>
+                <td class="model">DeepSeek-V3 / R1 671B<span class="sub">MoE · skrajna strata</span></td>
+                <td data-l="Aktywne">37B z 671B</td>
+                <td data-l="Kwantyzacja"><span class="pill r">IQ1_M</span> <span class="mono">142 GB</span></td>
+                <td data-l="Generacja"><span class="tps">4,5 – 7,5 t/s</span><div class="bar r"><span style="width:6%"></span></div></td>
+                <td data-l="Prefill" class="pp">45 – 90 t/s</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <h3>Dlaczego strata kwantyzacji daje skok prędkości?</h3>
+      <p>W modelach ograniczonych przepustowością pamięci (memory-bound) przejście z Q4_K_M
+      (ok. 4,8 bitu na wagę) na stratne formaty wektorowe IQ3_XXS (ok. 3,1 bitu) lub IQ2_XS (ok. 2,4 bitu)
+      zmniejsza objętość aktywnych macierzy czytanych z wolnego RAM-u DDR4 o <strong>35–50%</strong>.
+      Ponieważ Xeon E5-2690 v4 ma dość mocy obliczeniowej na 14 rdzeniach, by w locie rozpakować tablice
+      kodowe (lookup tables w kwantyzacji I-quant), zmniejszenie rozmiaru wag o 40% przekłada się niemal
+      liniowo na <strong>+30–40%</strong> tokenów na sekundę.</p>
+
+      <div class="note warn">
+        <span class="h">Granica opłacalności</span>
+        <p>Dla kodowania i logiki jest to <code>IQ3_XS</code> / <code>IQ3_XXS</code>. Zejście do IQ2 lub IQ1
+        powoduje zauważalną degradację (perplexity spike), gubienie składni w długim kodzie i halucynacje.</p>
+      </div>
+    </section>
+
+    <!-- ================= 2 ================= -->
+    <section id="s2">
+      <h2><span class="n">02</span>Lepsze sposoby na szybszą generację</h2>
+      <p>Zamiast polegać na domyślnych ustawieniach Ollama czy LM Studio, wydajność można drastycznie podnieść
+      programowo i sprzętowo.</p>
+
+      <h3>A. Optymalizacje programowe i silnikowe <span class="pill g">bezkosztowe</span></h3>
+
+      <ul class="clean">
+        <li><strong>Selektywne rzutowanie tensorów (<code>--override-tensor</code> / <code>-ot</code>):</strong>
+        nigdy nie używaj na tym serwerze zwykłego <code>-ngl</code> (wrzuca całe warstwy 1..N na GPU, resztę
+        zostawia na CPU). Zastosuj:
+        <pre><code>-ot "\.ffn_.*_exps\.=CPU" -ngl 99</code></pre>
+        Wszystkie warstwy Attention, KV-Cache, głowice wyjściowe oraz Shared Experts z każdej warstwy trafią
+        do szybkiego VRAM (448 GB/s) na czterech RTX 3070, a w wolnym RAM-ie zostaną wyłącznie rzadko
+        wywoływane macierze ekspertów FFN. Prefill przyspiesza <strong>5–8×</strong>, generacja
+        <strong>o 30–45%</strong>.</li>
+
+        <li><strong>Przejście na ik_llama.cpp, KTransformers lub silnik Strata:</strong>
+          <ul>
+            <li><strong>ik_llama.cpp</strong> (specjalistyczny fork llama.cpp) — przepisane kernele CPU AVX2
+            oraz obsługa kwantyzacji nieliniowych z przepakowaniem wag w pamięci pod linie cache Xeona:
+            <strong>+25–50% t/s</strong> przy odczycie z RAM.</li>
+            <li><strong>Strata</strong> (otwarty silnik inferencyjny z 2026 r. projektowany ściśle pod
+            Qwen 3.8 Flash Next 177B) — pierścień strumieniujący (streaming ring) w pożyczonym VRAM-ie,
+            podręczny cache najczęściej wywoływanych ekspertów oraz jednoczesne liczenie tej samej warstwy
+            przez CPU i GPU: z kilkunastu do <strong>~40 t/s</strong> na słabych GPU.</li>
+          </ul>
+        </li>
+
+        <li><strong>Natywne MTP i Speculative Decoding:</strong> w modelach z głowicami MTP (Qwen3.8,
+        Qwen3-Next, DeepSeek) włącz generację spekulatywną. Bez MTP załaduj mikro-model draft
+        (np. <code>Qwen3-0.6B-Q8_0</code>, 650 MB) w całości na pierwszą RTX 3070 (<code>-md</code>).
+        Weryfikacja 4–5 tokenów naraz przez główny model w RAM zajmuje procesorowi niemal tyle samo czasu
+        co wygenerowanie 1 tokenu, bo wagi eksperta są czytane z RAM tylko raz dla całej paczki.
+        Pisanie kodu przyspiesza <strong>1,7×–2,3×</strong>.</li>
+
+        <li><strong>Asymetryczna kwantyzacja (Unsloth Dynamic 2.0 / 3.0):</strong> wybieraj GGUF-y, w których
+        Attention, router bramkujący MoE oraz pierwsze/ostatnie warstwy są w Q6_K / Q8_0 (lądują w VRAM),
+        a macierze ekspertów FFN są mocno skompresowane do IQ3_XXS / IQ2_K (lądują w RAM). Prędkość modelu
+        2/3-bitowego przy inteligencji bliskiej 4/5 bitom.</li>
+      </ul>
+
+      <h3>B. Ścieżki sprzętowe — jak wyeliminować wąskie gardła</h3>
+
+      <div class="cards">
+        <div class="card">
+          <div class="ch"><span class="ic">↔</span>2× RTX 3090 zamiast 4× 3070</div>
+          <p>Cztery 3070 kosztują tyle samo lub niewiele mniej niż dwa używane 3090, a dają 48 GB VRAM
+          zamiast 32 GB i 2× wyższą przepustowość pamięci.</p>
+          <div class="kv">936 GB/s/kartę · NVLink P2P 112 GB/s · brak 4 riserów</div>
+        </div>
+        <div class="card">
+          <div class="ch"><span class="ic">↔</span>EPYC 7002 zamiast X99</div>
+          <p>Gdy celem są ogromne MoE z RAM-u, wąskim gardłem jest 4-kanałowy kontroler Xeona v4.
+          Płyta SP3 ma 8 kanałów DDR4-3200.</p>
+          <div class="kv">170–190 GB/s → ponad 3× szybsza generacja z RAM</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 3 ================= -->
+    <section id="s3">
+      <h2><span class="n">03</span>Techniczny przegląd nowszych i lepszych modeli</h2>
+
+      <p>Stare modele MoE (Mixtral 8x7B czy 8x22B) są dziś na takim sprzęcie nieefektywne: stosowały
+      architekturę <em>coarse-grained MoE</em> (8 dużych ekspertów, 2 aktywne — aż 25% modelu na token)
+      oraz pełną uwagę we wszystkich warstwach. Najnowsze generacje wprowadziły cztery przełomy, które
+      idealnie współgrają z klastrem hybrydowym.</p>
+
+      <h3>1. Qwen3.8-Flash-Next 177B <span class="pill c">preview architektury Qwen 4</span></h3>
+      <p>177B parametrów, ale konstrukcja całkowicie oddziela wiedzę od obliczeń GPU:</p>
+      <ul class="clean">
+        <li><strong>Rdzeń 125B Ultra-Sparse MoE (6B aktywnych):</strong> zamiast kilku dużych ekspertów —
+        gęsta siatka mikro-ekspertów, na każdy token zaledwie 6 mld parametrów.</li>
+        <li><strong>51B N-gram Embedding Table (pamięć deterministyczna 0-FLOP):</strong> 51 mld parametrów
+        to gigantyczna tablica osadzeń N-gramów. Podczas generacji procesor nie mnoży tych macierzy —
+        wykonuje prosty odczyt wskaźnika z RAM (<code>O(1)</code> lookup, zero FLOP). Te 51B nie obciąża
+        w ogóle magistrali pamięci ani jednostek wykonawczych.</li>
+        <li><strong>Hybrydowa uwaga 3:1 (Gated DeltaNet + Qwen Sparse Attention):</strong> na 3 warstwy
+        rekurencyjnej uwagi liniowej GDN przypada 1 warstwa rzadkiej uwagi QSA. KV-Cache maleje o
+        <strong>ponad 75%</strong> — ogromny kontekst mieści się na kartach 8 GB.</li>
+        <li><strong>Głowica 4B MTP:</strong> wbudowana predykcja wielotokenowa przyspieszająca dekodowanie.</li>
+      </ul>
+
+      <h3>2. Qwen3-Next-80B-A3B / Qwen3-Coder-Next <span class="pill c">80B / 3,3B aktywnych</span></h3>
+      <p>Najlepszy obecnie stosunek inteligencji do szybkości na systemach z 32 GB VRAM + 64/128 GB RAM.
+      80 mld parametrów całkowitych, ale na token aktywne tylko 3,3B — ponad 4× mniej niż stary Mixtral
+      8x7B, będąc od niego o kilka klas mądrzejszym w kodowaniu i rozumowaniu. W 4 bitach ~46 GB
+      (lub ~85 GB w Q8_0), czyli ponad połowa modelu mieści się w 32 GB VRAM, a z RAM-u procesor doczytuje
+      mniej niż 1 GB danych na token.</p>
+
+      <h3>3. Qwen3.6-35B-A3B / Gemma 4 26B-A4B <span class="pill g">100% w VRAM</span></h3>
+      <p>Modele stworzone do działania w całości wewnątrz 32 GB VRAM bez dotykania RAM. W 4 bitach zajmują
+      ~22 GB oraz ~17 GB, zostawiając miejsce na KV-Cache (do 128k–256k kontekstu) i generując około
+      <strong>100 tokenów/s</strong>.</p>
+
+      <h3>4. Qwen3.8-27B <span class="pill c">hybrydowy dense</span></h3>
+      <p>48 warstw Mamba2 + 16 warstw Full Attention. Czołowy model do kodowania i zadań multimodalnych
+      w 2026 r., mieści się w 32 GB VRAM (~18 GB w 4-bitach Dynamic 3.0). Zastąpienie 75% klasycznych warstw
+      Transformera liniowymi blokami Mamba2 drastycznie obniża narzut obliczeniowy przy długich plikach
+      kodu (do 262k tokenów).</p>
+    </section>
+
+    <!-- ================= 4 ================= -->
+    <section id="s4">
+      <h2><span class="n">04</span>Audyt techniczny i rynkowy zestawu</h2>
+
+      <p>Uwaga o kilkukrotnym wzroście cen RAM i SSD przez boom na AI oraz niedobór półprzewodników jest
+      w pełni zgodna z realiami rynkowymi 2026 r., ale w kontekście <em>dokładnie tego serwera</em> kryje się
+      w niej niuans inżynieryjny, który decyduje o opłacalności projektu.</p>
+
+      <h3>A. Kryzys DRAM/NAND a platforma X99</h3>
+
+      <ul class="clean">
+        <li><strong>Gdzie jest 100% racji:</strong> od końca 2025 r. przez cały 2026 r. rynek doświadcza
+        bezprecedensowego deficytu wafli DRAM i NAND Flash (prognozowanego przez TrendForce i Gartnera aż do
+        2028 r.). Producenci (Micron, SK Hynix, Samsung) przekierowali moce na HBM oraz serwerowe DDR5
+        i eSSD dla centrów danych AI. Sklepowe ceny konsumenckich DDR5 (32 GB za ponad 400 USD / 310+ EUR)
+        oraz nowych NVMe (1 TB za 150–250 USD) wzrosły 3–4-krotnie, ciągnąc za sobą DDR4 UDIMM
+        (+150–250%).</li>
+
+        <li><strong>Gdzie jest błąd w wycenie zestawu (pułapka lokalnych handlarzy):</strong>
+          <ul>
+            <li><strong>Serwerowe DDR4 ECC RDIMM ≠ konsumenckie UDIMM.</strong> Xeon E5-2690 v4 pracuje
+            z kośćmi ECC Registered (RDIMM) lub LRDIMM 2133/2400 MHz. Te moduły nie działają w zwykłych
+            desktopach (Core / Ryzen), więc popyt konsumencki ich nie dotyczy. Lokalni sprzedawcy w Polsce
+            sztucznie windują ceny starych RDIMM 2133/2400 do poziomu pamięci konsumenckich, wykorzystując
+            narrację o kryzysie. Na płycie 4-kanałowej z 8 slotami zamiast przepłacać za 4× 32 GB,
+            taniej i wydajniej jest obsadzić <strong>8× 16 GB DDR4-2400 ECC RDIMM</strong>
+            (rank interleaving w układzie 2DPC).</li>
+            <li><strong>Paradoks używanego SATA SSD w dobie drogiego NAND:</strong> skoro najdroższym
+            elementem SSD jest sam krzem NAND, różnica na rynku wtórnym między SATA a NVMe M.2 PCIe 3.0
+            o tej samej pojemności jest marginalna. SATA (~500 MB/s) do serwera ładującego modele
+            80–120 GB to krytyczny błąd: Qwen3.8-Flash-Next 177B (85 GB) ładuje się <strong>ponad 3 minuty</strong>
+            zamiast 25 sekund (NVMe PCIe 3.0 x4 @ 3,4 GB/s), a doczytywanie stron przez mmap paraliżuje
+            czas reakcji.</li>
+          </ul>
+        </li>
+      </ul>
+
+      <h3>B. Audyt inżynieryjny podzespołów i architektury</h3>
+
+      <div class="verdict">
+        <div class="score"><div class="big">3,5</div><div class="sub">/ 10 ocena</div></div>
+        <div class="txt">
+          <strong>Zestaw działa, ale przepłaca za architekturę, która nie daje przewagi</strong> —
+          dwa mostki PLX nie zwiększają przepustowości do RAM, a niezasilane risery to ryzyko pożarowe.
+        </div>
+      </div>
+
+      <h4>Płyta ASUS X99-E WS (~1650–1750 PLN) — krytyczna nieefektywność kosztowa</h4>
+      <p>Argumentacja jest bezbłędna technicznie. Dwa mostki Avago/Broadcom PLX PEX8747 są spięte z CPU
+      dwoma łączami nadrzędnymi PCIe 3.0 x16 (łącznie 32 linie z procesora). W hybrydowej inferencji MoE ruch
+      idzie trasą RAM → CPU → GPU (wektory aktywacji lub strumieniowanie wag). Dwie karty pod jednym mostkiem
+      PLX dzielą ten sam uplink x16 do CPU — dostają dokładnie taką samą przepustowość do RAM-u jak zwykłe
+      natywne gniazda x8/x8/x8/x8 bez PLX. Do tego blokada P2P DMA w sterownikach GeForce 30 uniemożliwia
+      wymianę danych wewnątrz switcha bez zmodyfikowanego jądra nvidia-open i ręcznej ingerencji w topologię
+      XML NCCL. Płacenie 1700 PLN za ponad 10-letnią płytę, gdy serwerowa C612 / X99 z natywnym rozkładem
+      x16/x8/x8/x8 (lub x8/x8/x8/x8 + 8 linii na dwa NVMe) kosztuje 350–500 PLN, marnuje
+      <strong>ponad 1200 PLN</strong>.</p>
+
+      <div class="note danger">
+        <span class="h">Ryzyko pożarowe — niezasilane risery 30 cm</span>
+        <p><strong>Przeciążenie prądowe:</strong> pojedyncza RTX 3070 pobiera z samego gniazda płyty
+        (linie +12V i +3.3V, niezależnie od wtyczek 8-pin) od 45 W do 70 W. Cztery karty przez nieaktywne
+        risery taśmowe ciągną z płyty łącznie <strong>200–280 W</strong>. Standardowa wiązka ATX 24-pin ma
+        tylko dwa przewody +12V (ok. 120–144 W ciągłego obciążenia). Bez riserów z własnym zasilaniem 6-pin
+        bezpośrednio z zasilacza dochodzi do przegrzania i stopienia pinów +12V we wtyczce ATX 24-pin.</p>
+      </div>
+
+      <div class="note warn">
+        <span class="h">Błędy transmisji PCIe 3.0 (8 GT/s)</span>
+        <p>Pasywne, nieekranowane taśmy 30 cm przy PCIe 3.0 generują ogromne przesłuchy i odbicia sygnału.
+        W klastrze 4× GPU blisko siebie: masowe błędy AER w <code>dmesg</code>, spadki linku do PCIe 1.1/2.0
+        lub zawieszanie llama.cpp / vLLM przy skokach poboru prądu. Poza obudowę — wyłącznie ekranowane kable
+        Twinax (PCIe 3.0/4.0) lub risery płytkowe z izolowanym zasilaniem 6-pin. W czystym MoE z RAM-u nawet
+        riser x1/x4 z własnym zasilaniem zachowa <strong>95% wydajności generacji</strong> (przesyłane są
+        kilobajtowe aktywacje), choć spowolni pierwsze ładowanie modelu do VRAM.</p>
+      </div>
+
+      <h4>Xeon E5-2690 v4 (Broadwell-EP) — brak AVX-512 i VNNI</h4>
+      <p>14 rdzeni / 28 wątków wystarcza do nasycenia 4 kanałów DDR4-2400 przy prostych kwantyzacjach, ale
+      Broadwell nie ma AVX-512 ani AVX-512 VNNI (wprowadzonych w Skylake-SP / Cascade Lake oraz Zen 4).
+      W nowoczesnych silnikach (ik_llama.cpp, KTransformers) AVX-512 VNNI przyspiesza mnożenie macierzy
+      skwantyzowanych ekspertów na CPU <strong>ponad 2-krotnie</strong> w fazie prefillu.</p>
+
+      <h4>Alokacja budżetu — rewizja pod maksymalizację t/s</h4>
+      <p>Zamiast ~1700 PLN na ASUS X99-E WS i męczenia się z czterema 8-gigabajtowymi kartami na pasywnych
+      taśmach, odzyskane ~1200 PLN oraz środki z czterech RTX 3070 lepiej przeznaczyć na:</p>
+      <ul class="clean">
+        <li>zwykłą płytę X99 / C612 z rozkładem x8/x8/x8/x8 + NVMe M.2 (<strong>~400–500 PLN</strong>)
+        oraz 8× 16 GB DDR4-2400 ECC RDIMM zamiast 4× 32 GB,</li>
+        <li>dysk NVMe PCIe 3.0 x4 zamiast SATA SSD,</li>
+        <li>mniejszą liczbę kart na rzecz większej pojemności pojedynczego układu — np. <strong>2× RTX 3090
+        24 GB (48 GB VRAM)</strong> wpięte bezpośrednio w płytę bez riserów, lub przy niższym budżecie
+        jedna karta 24 GB na warstwy uwagi i KV-Cache plus tańsze karty pomocnicze.</li>
+      </ul>
+
+      <div class="note ok">
+        <span class="h">Referencja</span>
+        <p>Praktyczny test pokazujący, jak silnik Strata wyciska około 40 tokenów/s z Qwen 3.8 Flash 177B
+        przy zaledwie 12 GB VRAM i RAM: <em>„This Engine Makes 177B Qwen 3.8 Flash Extremely Fast with 12GB”</em>.</p>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<footer>
+  <div class="wrap row">
+    <div class="tag">4× RTX 3070 · Xeon E5-2690 v4 · 128 GB DDR4-2400 ECC</div>
+    <div>Raport techniczny · listopad 2026</div>
+  </div>
+</footer>
+
+</body>
+</html>
